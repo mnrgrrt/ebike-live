@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import nl.meereboer.ebikelive.core.AssistMode
 import nl.meereboer.ebikelive.core.LdiConnection
 import nl.meereboer.ebikelive.core.LiveData
 import nl.meereboer.ebikelive.core.LiveService
@@ -87,6 +89,7 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
     }
 
     val heartRate = rememberHeartRate()
+    val mode = d.assistMode ?: AssistMode.UNKNOWN
     val live = status == LdiConnection.Status.LIVE
     val soc = d.batterySoc
     // Split ring. 6 o'clock = 0, 12 o'clock = max.
@@ -97,17 +100,28 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
     val measurer = rememberTextMeasurer()
     Canvas(Modifier.fillMaxSize().padding(6.dp)) {
-        val stroke = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Butt)
+        val w = 5.dp.toPx()
+        val stroke = Stroke(width = w, cap = StrokeCap.Butt)
+        // Outer ring: support level colour (grey until the bike reports it).
+        val outerInset = w / 2
+        drawCircle(
+            Color(mode.color), radius = size.minDimension / 2 - outerInset,
+            style = stroke,
+        )
+        // Inner split ring: power right, cadence left.
+        val inset = w + 3.dp.toPx() + w / 2
+        val tl = Offset(inset, inset)
+        val sz = Size(size.width - 2 * inset, size.height - 2 * inset)
         val gap = 2f
         val span = 180f - 2 * gap
-        drawArc(TRACK, 90f - gap, -span, false, style = stroke)
-        drawArc(TRACK, 90f + gap, span, false, style = stroke)
+        drawArc(TRACK, 90f - gap, -span, false, tl, sz, style = stroke)
+        drawArc(TRACK, 90f + gap, span, false, tl, sz, style = stroke)
         val powerEnd = 90f - gap - span * powerFrac
         val cadenceEnd = 90f + gap + span * cadenceFrac
-        if (powerFrac > 0f) drawArc(POWER, 90f - gap, -span * powerFrac, false, style = stroke)
-        if (cadenceFrac > 0f) drawArc(CADENCE, 90f + gap, span * cadenceFrac, false, style = stroke)
+        if (powerFrac > 0f) drawArc(POWER, 90f - gap, -span * powerFrac, false, tl, sz, style = stroke)
+        if (cadenceFrac > 0f) drawArc(CADENCE, 90f + gap, span * cadenceFrac, false, tl, sz, style = stroke)
         // Number sits just inside the ring, where the coloured line ends.
-        val r = size.minDimension / 2 - 20.dp.toPx()
+        val r = size.minDimension / 2 - inset - 14.dp.toPx()
         fun label(value: Int?, angle: Float, color: Color) {
             if (value == null || value <= 0) return
             val t = measurer.measure(
