@@ -9,6 +9,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.rotary.onRotaryScrollEvent
+import androidx.compose.ui.platform.LocalContext
+import android.media.AudioManager
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -110,7 +116,31 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
     // Left half: cadence 0-100 rpm (fills clockwise via 9 o'clock).
     val powerFrac = ((d.riderPower ?: 0) / MAX_POWER).coerceIn(0f, 1f)
     val cadenceFrac = ((d.cadence ?: 0).coerceAtLeast(0) / MAX_CADENCE).coerceIn(0f, 1f)
-    Box(Modifier.fillMaxSize()) {
+    // Bezel / crown turns the media volume (music playing on the watch).
+    val ctx = LocalContext.current
+    val audio = remember { ctx.getSystemService(AudioManager::class.java) }
+    val focus = remember { FocusRequester() }
+    var turned by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onRotaryScrollEvent { e ->
+                turned += e.verticalScrollPixels
+                while (kotlin.math.abs(turned) >= VOLUME_STEP_PX) {
+                    val up = turned > 0
+                    audio?.adjustStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+                        AudioManager.FLAG_SHOW_UI,
+                    )
+                    turned -= if (up) VOLUME_STEP_PX else -VOLUME_STEP_PX
+                }
+                true
+            }
+            .focusRequester(focus)
+            .focusable(),
+    ) {
     val measurer = rememberTextMeasurer()
     Canvas(Modifier.fillMaxSize().padding(6.dp)) {
         val w = 5.dp.toPx()
@@ -205,3 +235,4 @@ private val CADENCE = Color(0xFF29B6F6)
 private val HEART = Color(0xFFFF5252)
 private val MUSIC = Color(0xFF1ED760)
 private const val SPOTIFY = "com.spotify.music"
+private const val VOLUME_STEP_PX = 40f
