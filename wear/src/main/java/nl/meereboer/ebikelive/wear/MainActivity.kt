@@ -2,7 +2,6 @@ package nl.meereboer.ebikelive.wear
 
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -76,10 +75,6 @@ class MainActivity : ComponentActivity() {
                     onStart = { permissionRequest.launch(LiveService.PERMISSIONS) },
                     onStop = { LiveService.stop(this) },
                     onMusic = { openSpotify() },
-                    keepScreenOn = { on ->
-                        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    },
                 )
             }
         }
@@ -95,7 +90,6 @@ private fun Screen(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onMusic: () -> Unit,
-    keepScreenOn: (Boolean) -> Unit,
 ) {
     val conn by LiveService.connection.collectAsState()
     val status by (conn?.status ?: emptyStatus).collectAsState()
@@ -117,16 +111,6 @@ private fun Screen(
 
     val mode = d.assistMode ?: AssistMode.UNKNOWN
     val live = status == LdiConnection.Status.LIVE
-    // Screen stays on while riding. After 30 s standstill it may go off as
-    // usual; raising your wrist brings you back here (ongoing activity).
-    val moving = live && ((d.speedKmh ?: 0.0) > 2.0 || d.inMotion == true)
-    LaunchedEffect(moving) {
-        if (moving) keepScreenOn(true)
-        else {
-            kotlinx.coroutines.delay(STANDSTILL_MS)
-            keepScreenOn(false)
-        }
-    }
     val soc = d.batterySoc
     // Split ring. 6 o'clock = 0, 12 o'clock = max.
     // Right half: rider power 0-200 W (fills counter-clockwise via 3 o'clock).
@@ -269,4 +253,3 @@ private fun spotifyLogo(ctx: android.content.Context) = runCatching {
         android.graphics.Bitmap.createBitmap(full, 18, 18, 72, 72).asImageBitmap()
     } else d.toBitmap(72, 72).asImageBitmap()
 }.getOrNull()
-private const val STANDSTILL_MS = 30_000L
