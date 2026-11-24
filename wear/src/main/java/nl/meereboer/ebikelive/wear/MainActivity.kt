@@ -159,7 +159,7 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
             },
         )
         Text(
-            "\u2665 ${heartRate ?: "--"}",
+            "${heartRate ?: "--"}",
             fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = HEART,
         )
         if (!live) {
