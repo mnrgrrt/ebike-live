@@ -186,7 +186,22 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
             fontSize = 64.sp, fontWeight = FontWeight.Bold,
             color = if (live) Color.White else Color.Gray,
         )
-        Text("km/u", fontSize = 14.sp, color = Color.LightGray)
+        // km/u in the middle, Spotify logo on the same line further right.
+        val spotifyIcon = remember { spotifyLogo(ctx) }
+        Box(Modifier.fillMaxWidth()) {
+            Text(
+                "km/u", fontSize = 14.sp, color = Color.LightGray,
+                modifier = Modifier.align(Alignment.Center),
+            )
+            Box(
+                Modifier.align(Alignment.CenterEnd).padding(end = 36.dp).size(24.dp)
+                    .clickable { onMusic() },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (spotifyIcon != null) Image(spotifyIcon, contentDescription = "Spotify", modifier = Modifier.fillMaxSize())
+                else Text("\u266A", fontSize = 16.sp, color = MUSIC)
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             "${soc ?: "--"}%",
@@ -211,16 +226,6 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
             "stop", fontSize = 12.sp, color = Color.Gray,
             modifier = Modifier.clickable { onStop() }.padding(6.dp),
         )
-    }
-    // Spotify's own logo, taken from the installed app (no background).
-    val spotifyIcon = remember { spotifyLogo(ctx) }
-    Box(
-        Modifier.align(Alignment.CenterEnd).padding(end = 30.dp).size(24.dp)
-            .clickable { onMusic() },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (spotifyIcon != null) Image(spotifyIcon, contentDescription = "Spotify", modifier = Modifier.fillMaxSize())
-        else Text("\u266A", fontSize = 16.sp, color = MUSIC)
     }
 }
 }
