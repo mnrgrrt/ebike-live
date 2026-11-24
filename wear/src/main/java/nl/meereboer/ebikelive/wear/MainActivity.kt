@@ -207,32 +207,20 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
             Text(msg, fontSize = 11.sp, textAlign = TextAlign.Center, color = Color.LightGray)
         }
         Spacer(Modifier.height(4.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Spotify's own installed app icon; green note if Spotify is missing.
-            val spotifyIcon = remember {
-                runCatching {
-                    ctx.packageManager.getApplicationIcon(SPOTIFY).toBitmap(64, 64).asImageBitmap()
-                }.getOrNull()
-            }
-            if (spotifyIcon != null) {
-                Image(
-                    spotifyIcon, contentDescription = "Spotify",
-                    modifier = Modifier.size(26.dp).clickable { onMusic() },
-                )
-            } else {
-                Box(
-                    Modifier.size(26.dp).background(MUSIC, CircleShape).clickable { onMusic() },
-                    contentAlignment = Alignment.Center,
-                ) { Text("\u266A", fontSize = 15.sp, color = Color.Black) }
-            }
-            Text(
-                "stop", fontSize = 12.sp, color = Color.Gray,
-                modifier = Modifier.clickable { onStop() }.padding(6.dp),
-            )
-        }
+        Text(
+            "stop", fontSize = 12.sp, color = Color.Gray,
+            modifier = Modifier.clickable { onStop() }.padding(6.dp),
+        )
+    }
+    // Spotify's own logo, taken from the installed app (no background).
+    val spotifyIcon = remember { spotifyLogo(ctx) }
+    Box(
+        Modifier.align(Alignment.CenterEnd).padding(end = 30.dp).size(24.dp)
+            .clickable { onMusic() },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (spotifyIcon != null) Image(spotifyIcon, contentDescription = "Spotify", modifier = Modifier.fillMaxSize())
+        else Text("\u266A", fontSize = 16.sp, color = MUSIC)
     }
 }
 }
@@ -246,3 +234,13 @@ private val HEART = Color(0xFFFF5252)
 private val MUSIC = Color(0xFF1ED760)
 private const val SPOTIFY = "com.spotify.music"
 private const val VOLUME_STEP_PX = 40f
+
+/** Logo layer of the installed Spotify icon, cropped to the visible part. */
+private fun spotifyLogo(ctx: android.content.Context) = runCatching {
+    val d = ctx.packageManager.getApplicationIcon(SPOTIFY)
+    if (d is android.graphics.drawable.AdaptiveIconDrawable && d.foreground != null) {
+        // Adaptive icons are 108 units with the logo in the middle 72.
+        val full = d.foreground.toBitmap(108, 108)
+        android.graphics.Bitmap.createBitmap(full, 18, 18, 72, 72).asImageBitmap()
+    } else d.toBitmap(72, 72).asImageBitmap()
+}.getOrNull()
