@@ -7,7 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import androidx.wear.ongoing.OngoingActivity
+import androidx.wear.ongoing.Status
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -82,7 +85,7 @@ class LiveService : Service() {
             this, 1, Intent(this, LiveService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        return NotificationCompat.Builder(this, CHANNEL)
+        val builder = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setContentTitle("eBike live")
             .setContentText(text)
@@ -91,7 +94,17 @@ class LiveService : Service() {
             .setContentIntent(pi)
             .addAction(0, "Stop", stop)
             .setCategory(NotificationCompat.CATEGORY_WORKOUT)
-            .build()
+        // On the watch: mark as ongoing activity, so raising your wrist after
+        // the screen went off brings you back to the app, not the watch face.
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_WATCH)) {
+            OngoingActivity.Builder(applicationContext, NOTIF_ID, builder)
+                .setStaticIcon(android.R.drawable.stat_sys_data_bluetooth)
+                .setTouchIntent(pi)
+                .setStatus(Status.Builder().addTemplate(text).build())
+                .build()
+                .apply(applicationContext)
+        }
+        return builder.build()
     }
 
     companion object {

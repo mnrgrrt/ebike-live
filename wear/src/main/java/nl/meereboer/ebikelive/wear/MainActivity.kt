@@ -70,15 +70,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Keep the display on while the app is in front: you want to glance at
-        // your speed without tapping the watch.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             MaterialTheme {
                 Screen(
-                    onStart = { permissionRequest.launch(LiveService.PERMISSIONS + HEART_PERMISSIONS) },
+                    onStart = { permissionRequest.launch(LiveService.PERMISSIONS) },
                     onStop = { LiveService.stop(this) },
                     onMusic = { openSpotify() },
+                    keepScreenOn = { on ->
+                        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    },
                 )
             }
         }
@@ -90,7 +91,12 @@ private val emptyData = MutableStateFlow(LiveData())
 private val emptyMsg = MutableStateFlow("")
 
 @Composable
-private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit) {
+private fun Screen(
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onMusic: () -> Unit,
+    keepScreenOn: (Boolean) -> Unit,
+) {
     val conn by LiveService.connection.collectAsState()
     val status by (conn?.status ?: emptyStatus).collectAsState()
     val d by (conn?.data ?: emptyData).collectAsState()
@@ -109,9 +115,18 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
         return
     }
 
-    val heartRate = rememberHeartRate()
     val mode = d.assistMode ?: AssistMode.UNKNOWN
     val live = status == LdiConnection.Status.LIVE
+    // Screen stays on while riding. After 30 s standstill it may go off as
+    // usual; raising your wrist brings you back here (ongoing activity).
+    val moving = live && ((d.speedKmh ?: 0.0) > 2.0 || d.inMotion == true)
+    LaunchedEffect(moving) {
+        if (moving) keepScreenOn(true)
+        else {
+            kotlinx.coroutines.delay(STANDSTILL_MS)
+            keepScreenOn(false)
+        }
+    }
     val soc = d.batterySoc
     // Split ring. 6 o'clock = 0, 12 o'clock = max.
     // Right half: rider power 0-200 W (fills counter-clockwise via 3 o'clock).
@@ -227,10 +242,6 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
                 else -> Color(0xFF69F0AE)
             },
         )
-        Text(
-            "${heartRate ?: "--"}",
-            fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = HEART,
-        )
         if (!live) {
             Spacer(Modifier.height(4.dp))
             Text(msg, fontSize = 11.sp, textAlign = TextAlign.Center, color = Color.LightGray)
@@ -244,7 +255,6 @@ private const val MAX_CADENCE = 100f
 private val TRACK = Color(0xFF2C2C2A)
 private val POWER = Color(0xFFFF8A3D)
 private val CADENCE = Color(0xFF29B6F6)
-private val HEART = Color(0xFFFF5252)
 private val MUSIC = Color(0xFF1ED760)
 private val STOP_RED = Color(0xFFFF5252)
 private const val SPOTIFY = "com.spotify.music"
@@ -259,3 +269,4 @@ private fun spotifyLogo(ctx: android.content.Context) = runCatching {
         android.graphics.Bitmap.createBitmap(full, 18, 18, 72, 72).asImageBitmap()
     } else d.toBitmap(72, 72).asImageBitmap()
 }.getOrNull()
+private const val STANDSTILL_MS = 30_000L
