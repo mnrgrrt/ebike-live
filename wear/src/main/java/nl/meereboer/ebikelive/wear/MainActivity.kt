@@ -7,7 +7,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.FocusRequester
@@ -214,10 +217,23 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(26.dp).background(MUSIC, CircleShape).clickable { onMusic() },
-                contentAlignment = Alignment.Center,
-            ) { Text("\u266A", fontSize = 15.sp, color = Color.Black) }
+            // Spotify's own installed app icon; green note if Spotify is missing.
+            val spotifyIcon = remember {
+                runCatching {
+                    ctx.packageManager.getApplicationIcon(SPOTIFY).toBitmap(64, 64).asImageBitmap()
+                }.getOrNull()
+            }
+            if (spotifyIcon != null) {
+                Image(
+                    spotifyIcon, contentDescription = "Spotify",
+                    modifier = Modifier.size(26.dp).clickable { onMusic() },
+                )
+            } else {
+                Box(
+                    Modifier.size(26.dp).background(MUSIC, CircleShape).clickable { onMusic() },
+                    contentAlignment = Alignment.Center,
+                ) { Text("\u266A", fontSize = 15.sp, color = Color.Black) }
+            }
             Text(
                 "stop", fontSize = 12.sp, color = Color.Gray,
                 modifier = Modifier.clickable { onStop() }.padding(6.dp),
