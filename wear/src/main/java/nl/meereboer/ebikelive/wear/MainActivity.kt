@@ -193,6 +193,20 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
                 "km/u", fontSize = 14.sp, color = Color.LightGray,
                 modifier = Modifier.align(Alignment.Center),
             )
+            // Stop: red circle with a slash, mirrored opposite the Spotify logo.
+            Canvas(
+                Modifier.align(Alignment.CenterStart).padding(start = 36.dp).size(24.dp)
+                    .clickable { onStop() },
+            ) {
+                val sw = 2.5.dp.toPx()
+                val r = size.minDimension / 2 - sw / 2
+                drawCircle(STOP_RED, radius = r, style = Stroke(width = sw))
+                val d = r * 0.7071f
+                drawLine(
+                    STOP_RED, Offset(center.x - d, center.y - d), Offset(center.x + d, center.y + d),
+                    strokeWidth = sw,
+                )
+            }
             Box(
                 Modifier.align(Alignment.CenterEnd).padding(end = 36.dp).size(24.dp)
                     .clickable { onMusic() },
@@ -221,11 +235,6 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
             Spacer(Modifier.height(4.dp))
             Text(msg, fontSize = 11.sp, textAlign = TextAlign.Center, color = Color.LightGray)
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "stop", fontSize = 12.sp, color = Color.Gray,
-            modifier = Modifier.clickable { onStop() }.padding(6.dp),
-        )
     }
 }
 }
@@ -237,6 +246,7 @@ private val POWER = Color(0xFFFF8A3D)
 private val CADENCE = Color(0xFF29B6F6)
 private val HEART = Color(0xFFFF5252)
 private val MUSIC = Color(0xFF1ED760)
+private val STOP_RED = Color(0xFFFF5252)
 private const val SPOTIFY = "com.spotify.music"
 private const val VOLUME_STEP_PX = 40f
 
