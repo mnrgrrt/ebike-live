@@ -5,7 +5,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
+import nl.meereboer.ebikelive.core.AssistMode
 import nl.meereboer.ebikelive.core.LdiConnection
 import nl.meereboer.ebikelive.core.LiveData
 import nl.meereboer.ebikelive.core.LiveService
@@ -65,14 +70,29 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Spacer(Modifier.height(24.dp))
-        Text(
-            d.speedKmh?.let { "%.1f".format(it) } ?: "--",
-            fontSize = 96.sp, fontWeight = FontWeight.Bold,
-        )
-        Text("km/u", fontSize = 20.sp)
-        Spacer(Modifier.height(8.dp))
-        Text("Accu ${d.batterySoc ?: "--"}%", fontSize = 36.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(16.dp))
+        val mode = d.assistMode ?: AssistMode.UNKNOWN
+        Box(Modifier.size(300.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                drawArc(
+                    color = Color(mode.color),
+                    startAngle = 135f, sweepAngle = 270f, useCenter = false,
+                    style = Stroke(width = 18.dp.toPx(), cap = StrokeCap.Round),
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    d.speedKmh?.let { "%.1f".format(it) } ?: "--",
+                    fontSize = 104.sp, fontWeight = FontWeight.Bold,
+                )
+                Text("km/u", fontSize = 20.sp)
+            }
+            Text(
+                mode.label, fontSize = 16.sp, color = Color(mode.color),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+            )
+        }
+        Text("Accu ${d.batterySoc ?: "--"}%", fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Small("Cadans", d.cadence?.let { "$it rpm" })
             Small("Vermogen", d.riderPower?.let { "$it W" })
@@ -90,6 +110,11 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
             fontWeight = FontWeight.SemiBold,
         )
         if (msg.isNotEmpty()) Text(msg)
+        if (d.unknownFields.isNotEmpty()) Text(
+            "Nieuwe velden van de fiets: " +
+                d.unknownFields.entries.sortedBy { it.key }.joinToString { "${it.key}=${it.value}" },
+            fontSize = 12.sp,
+        )
         Button(onClick = if (running) onStop else onStart) {
             Text(if (running) "Stop" else "Start")
         }

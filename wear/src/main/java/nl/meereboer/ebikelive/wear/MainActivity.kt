@@ -6,7 +6,9 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import nl.meereboer.ebikelive.core.AssistMode
 import nl.meereboer.ebikelive.core.LdiConnection
 import nl.meereboer.ebikelive.core.LiveData
 import nl.meereboer.ebikelive.core.LiveService
@@ -79,6 +82,15 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
 
     val live = status == LdiConnection.Status.LIVE
     val soc = d.batterySoc
+    val mode = d.assistMode ?: AssistMode.UNKNOWN
+    Box(Modifier.fillMaxSize()) {
+    Canvas(Modifier.fillMaxSize().padding(4.dp)) {
+        drawArc(
+            color = Color(mode.color),
+            startAngle = 0f, sweepAngle = 360f, useCenter = false,
+            style = Stroke(width = 8.dp.toPx()),
+        )
+    }
     Column(
         Modifier.fillMaxSize().padding(horizontal = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -111,4 +123,5 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
             modifier = Modifier.clickable { onStop() }.padding(6.dp),
         )
     }
+}
 }
