@@ -17,7 +17,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalContext
-import android.media.AudioManager
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -119,9 +118,8 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
     // Left half: cadence 0-100 rpm (fills clockwise via 9 o'clock).
     val powerFrac = ((d.riderPower ?: 0) / MAX_POWER).coerceIn(0f, 1f)
     val cadenceFrac = ((d.cadence ?: 0).coerceAtLeast(0) / MAX_CADENCE).coerceIn(0f, 1f)
-    // Bezel / crown turns the media volume (music playing on the watch).
+    // Bezel / crown turns the volume of whatever plays on the phone (Spotify).
     val ctx = LocalContext.current
-    val audio = remember { ctx.getSystemService(AudioManager::class.java) }
     val focus = remember { FocusRequester() }
     var turned by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -132,11 +130,7 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit)
                 turned += e.verticalScrollPixels
                 while (kotlin.math.abs(turned) >= VOLUME_STEP_PX) {
                     val up = turned > 0
-                    audio?.adjustStreamVolume(
-                        AudioManager.STREAM_MUSIC,
-                        if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
-                        AudioManager.FLAG_SHOW_UI,
-                    )
+                    PhoneVolume.step(ctx, up)
                     turned -= if (up) VOLUME_STEP_PX else -VOLUME_STEP_PX
                 }
                 true
