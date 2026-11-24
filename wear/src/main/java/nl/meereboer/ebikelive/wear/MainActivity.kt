@@ -7,7 +7,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
@@ -48,6 +50,16 @@ class MainActivity : ComponentActivity() {
     private fun has(p: String) =
         ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
 
+    private fun openSpotify() {
+        val launch = packageManager.getLaunchIntentForPackage(SPOTIFY)
+            ?: android.content.Intent(
+                android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("market://details?id=$SPOTIFY"),
+            )
+        launch.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { startActivity(launch) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Keep the display on while the app is in front: you want to glance at
@@ -58,6 +70,7 @@ class MainActivity : ComponentActivity() {
                 Screen(
                     onStart = { permissionRequest.launch(LiveService.PERMISSIONS + HEART_PERMISSIONS) },
                     onStop = { LiveService.stop(this) },
+                    onMusic = { openSpotify() },
                 )
             }
         }
@@ -69,7 +82,7 @@ private val emptyData = MutableStateFlow(LiveData())
 private val emptyMsg = MutableStateFlow("")
 
 @Composable
-private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
+private fun Screen(onStart: () -> Unit, onStop: () -> Unit, onMusic: () -> Unit) {
     val conn by LiveService.connection.collectAsState()
     val status by (conn?.status ?: emptyStatus).collectAsState()
     val d by (conn?.data ?: emptyData).collectAsState()
@@ -166,11 +179,20 @@ private fun Screen(onStart: () -> Unit, onStop: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text(msg, fontSize = 11.sp, textAlign = TextAlign.Center, color = Color.LightGray)
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "stop", fontSize = 12.sp, color = Color.Gray,
-            modifier = Modifier.clickable { onStop() }.padding(6.dp),
-        )
+        Spacer(Modifier.height(4.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(26.dp).background(MUSIC, CircleShape).clickable { onMusic() },
+                contentAlignment = Alignment.Center,
+            ) { Text("\u266A", fontSize = 15.sp, color = Color.Black) }
+            Text(
+                "stop", fontSize = 12.sp, color = Color.Gray,
+                modifier = Modifier.clickable { onStop() }.padding(6.dp),
+            )
+        }
     }
 }
 }
@@ -181,3 +203,5 @@ private val TRACK = Color(0xFF2C2C2A)
 private val POWER = Color(0xFFFF8A3D)
 private val CADENCE = Color(0xFF29B6F6)
 private val HEART = Color(0xFFFF5252)
+private val MUSIC = Color(0xFF1ED760)
+private const val SPOTIFY = "com.spotify.music"

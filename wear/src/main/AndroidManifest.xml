@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.BODY_SENSORS" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
 
+    <queries>
+        <package android:name="com.spotify.music" />
+    </queries>
+
     <application
         android:label="eBike live"
         android:icon="@android:drawable/stat_sys_data_bluetooth"
