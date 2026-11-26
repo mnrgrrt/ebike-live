@@ -125,6 +125,7 @@ class LiveService : Service() {
         val PERMISSIONS = arrayOf(
             android.Manifest.permission.BLUETOOTH_ADVERTISE,
             android.Manifest.permission.BLUETOOTH_CONNECT,
+            android.Manifest.permission.BLUETOOTH_SCAN,
             android.Manifest.permission.POST_NOTIFICATIONS,
         )
     }
