@@ -11,8 +11,8 @@ android {
         applicationId = "nl.meereboer.ebikelive"
         minSdk = 31
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2-debug"
+        versionCode = 3
+        versionName = "0.3-debug"
     }
     signingConfigs {
         val ks = rootProject.file("debug.keystore")
@@ -33,6 +33,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.wear.compose:compose-material:1.4.0")
     implementation("androidx.wear.compose:compose-foundation:1.4.0")
+    implementation("androidx.wear:wear:1.3.0")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
 }

@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.wear.ambient.AmbientLifecycleObserver
 import androidx.wear.compose.material.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import nl.meereboer.ebikelive.core.AssistMode
@@ -67,14 +68,30 @@ class MainActivity : ComponentActivity() {
         runCatching { startActivity(launch) }
     }
 
+    // Always-on: the app stays on screen in a dim, low-power form instead of
+    // dropping to the watch face when the wrist goes down.
+    private var ambient by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val observer = AmbientLifecycleObserver(
+            this,
+            object : AmbientLifecycleObserver.AmbientLifecycleCallback {
+                override fun onEnterAmbient(details: AmbientLifecycleObserver.AmbientDetails) {
+                    ambient = true
+                }
+                override fun onExitAmbient() { ambient = false }
+                override fun onUpdateAmbient() {}
+            },
+        )
+        lifecycle.addObserver(observer)
         setContent {
             MaterialTheme {
                 Screen(
                     onStart = { permissionRequest.launch(LiveService.PERMISSIONS) },
                     onStop = { LiveService.stop(this) },
                     onMusic = { openSpotify() },
+                    ambient = ambient,
                 )
             }
         }
@@ -90,11 +107,34 @@ private fun Screen(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onMusic: () -> Unit,
+    ambient: Boolean = false,
 ) {
     val conn by LiveService.connection.collectAsState()
     val status by (conn?.status ?: emptyStatus).collectAsState()
     val d by (conn?.data ?: emptyData).collectAsState()
     val msg by (conn?.message ?: emptyMsg).collectAsState()
+
+    // Dim, low-power screen while the wrist is down. Only the two numbers,
+    // grey on black, no rings, no buttons. Saves battery and avoids burn-in.
+    if (ambient && conn != null) {
+        Column(
+            Modifier.fillMaxSize().background(Color.Black).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                d.speedKmh?.let { "%.0f".format(it) } ?: "--",
+                fontSize = 60.sp, fontWeight = FontWeight.Light, color = Color(0xFFBBBBBB),
+            )
+            Text("km/u", fontSize = 13.sp, color = Color(0xFF777777))
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "${d.batterySoc ?: "--"}%",
+                fontSize = 26.sp, fontWeight = FontWeight.Light, color = Color(0xFF999999),
+            )
+        }
+        return
+    }
 
     if (conn == null) {
         Column(
