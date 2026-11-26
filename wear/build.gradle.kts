@@ -11,8 +11,8 @@ android {
         applicationId = "nl.meereboer.ebikelive"
         minSdk = 31
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.4-debug"
+        versionCode = 5
+        versionName = "0.5-debug"
     }
     signingConfigs {
         val ks = rootProject.file("debug.keystore")

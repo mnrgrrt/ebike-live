@@ -5,9 +5,6 @@ import android.bluetooth.*
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanResult
-import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -24,15 +21,16 @@ import java.util.UUID
 /**
  * Connection to a Bosch smart system eBike via the Live Data Interface.
  *
- * The LDI design has the eBike as the BLE central: it scans for accessories
- * that advertise a Service Solicitation for the LDI service and connects to
- * them. We support that path (advertise + wait). But some bikes, especially
- * after a firmware update, stop initiating that connection. So we ALSO do it
- * the other way around: the watch scans for the bike and connects to it as a
- * GATT client directly. Whichever path connects first wins.
+ * Roles are reversed compared to most BLE gadgets: the eBike is the BLE
+ * central. It scans for accessories that advertise a Service Solicitation
+ * for the LDI service and connects to them. Once the link is up we act as
+ * GATT client on that same link and subscribe to the live data
+ * characteristic (eb21).
  *
- * On every start we also log all nearby BLE devices, so the bike can be
- * recognised from the log.
+ * First time: in the Bosch Flow app go to the bike, gear icon, Components,
+ * "Add new device". The bike scans and finds this phone or watch. Confirm
+ * on the bike display. After that the bike reconnects by itself whenever it
+ * is switched on and this app is running.
  */
 @SuppressLint("MissingPermission")
 class LdiConnection(private val context: Context) {
@@ -49,13 +47,11 @@ class LdiConnection(private val context: Context) {
     private val manager = context.getSystemService(BluetoothManager::class.java)
     private val adapter: BluetoothAdapter? = manager?.adapter
     private val main = Handler(Looper.getMainLooper())
-    private val prefs = context.getSharedPreferences("ebike", Context.MODE_PRIVATE)
 
     private var gattServer: BluetoothGattServer? = null
     private var gatt: BluetoothGatt? = null
     private var bikeDevice: BluetoothDevice? = null
     private var advertising = false
-    private var scanning = false
     private var running = false
 
     // ---------------------------------------------------------------- public
@@ -67,32 +63,25 @@ class LdiConnection(private val context: Context) {
             fail("Bluetooth staat uit")
             return
         }
+        if (a.bluetoothLeAdvertiser == null) {
+            fail("Dit apparaat kan geen Bluetooth-advertising (peripheral mode)")
+            return
+        }
         running = true
         androidx.core.content.ContextCompat.registerReceiver(
             context, bondReceiver,
             IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
             androidx.core.content.ContextCompat.RECEIVER_EXPORTED,
         )
-        _status.value = Status.WAITING_FOR_BIKE
-        _message.value = "Fiets zoeken..."
-        // Path 1: advertise so the bike can connect to us (classic LDI).
-        if (a.bluetoothLeAdvertiser != null) {
-            gattServer = manager?.openGattServer(context, serverCallback)
-            startAdvertising()
-        } else {
-            log("no advertiser, central-only mode")
-        }
-        // Path 2: we go looking for the bike ourselves.
-        startScan()
-        // Path 3: keep a standing connect to the last known bike address.
-        tryDirectConnect(storedBikeAddress())
+        // An (empty) GATT server gives us callbacks when the bike connects.
+        gattServer = manager?.openGattServer(context, serverCallback)
+        startAdvertising()
     }
 
     fun stop() {
         if (!running) return
         running = false
         stopAdvertising()
-        stopScan()
         gatt?.disconnect()
         gatt?.close()
         gatt = null
@@ -102,19 +91,6 @@ class LdiConnection(private val context: Context) {
         runCatching { context.unregisterReceiver(bondReceiver) }
         _status.value = Status.STOPPED
         _message.value = ""
-    }
-
-    // ----------------------------------------------------------- bike address
-
-    private fun storedBikeAddress(): String? =
-        prefs.getString("bike_addr", null) ?: KNOWN_BIKE_ADDR
-
-    private fun rememberBike(addr: String?) {
-        if (addr.isNullOrBlank()) return
-        if (prefs.getString("bike_addr", null) != addr) {
-            prefs.edit().putString("bike_addr", addr).apply()
-            log("remembered bike addr=$addr")
-        }
     }
 
     // ----------------------------------------------------------- advertising
@@ -127,6 +103,7 @@ class LdiConnection(private val context: Context) {
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
             .setConnectable(true)
             .build()
+        // Flags (3) + 128-bit solicitation (18) = 21 of 31 bytes.
         val adv = AdvertiseData.Builder()
             .addServiceSolicitationUuid(ParcelUuid(LDI_SERVICE))
             .setIncludeDeviceName(false)
@@ -134,7 +111,7 @@ class LdiConnection(private val context: Context) {
         val scanResponse = AdvertiseData.Builder()
             .setIncludeDeviceName(true)
             .build()
-        runCatching { advertiser.startAdvertising(settings, adv, scanResponse, advertiseCallback) }
+        advertiser.startAdvertising(settings, adv, scanResponse, advertiseCallback)
     }
 
     private fun stopAdvertising() {
@@ -146,81 +123,21 @@ class LdiConnection(private val context: Context) {
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
             advertising = true
+            if (_status.value != Status.LIVE) {
+                _status.value = Status.WAITING_FOR_BIKE
+                _message.value = "Wacht op fiets. Zet de fiets aan."
+            }
             log("advertising started")
         }
 
         override fun onStartFailure(errorCode: Int) {
             advertising = false
-            if (errorCode == ADVERTISE_FAILED_ALREADY_STARTED) advertising = true
-            else log("advertising failed code=$errorCode")
-        }
-    }
-
-    // --------------------------------------------------------------- scanning
-
-    private fun startScan() {
-        if (!running || scanning) return
-        val scanner = adapter?.bluetoothLeScanner ?: run {
-            log("no scanner available")
-            return
-        }
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-        // No filter: we want to see and log everything nearby.
-        runCatching { scanner.startScan(null, settings, scanCallback) }
-            .onSuccess {
-                scanning = true
-                log("scan started")
+            if (errorCode == ADVERTISE_FAILED_ALREADY_STARTED) {
+                advertising = true
+                return
             }
-            .onFailure { log("scan start failed: ${it.message}") }
-        // Active scanning is costly. Run a 30s burst, then stop; the standing
-        // direct connect keeps trying after that.
-        main.postDelayed({ stopScan() }, 30_000)
-    }
-
-    private fun stopScan() {
-        if (!scanning) return
-        runCatching { adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
-        scanning = false
-        log("scan stopped")
-    }
-
-    private val seen = HashSet<String>()
-
-    private val scanCallback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val dev = result.device
-            val rec = result.scanRecord
-            val addr = dev.address
-            // Log each distinct device once per scan burst.
-            if (seen.add(addr)) {
-                val name = rec?.deviceName ?: dev.name ?: "?"
-                val services = rec?.serviceUuids?.joinToString(",") { it.uuid.toString() } ?: "-"
-                val solicit = rec?.serviceSolicitationUuids?.joinToString(",") { it.uuid.toString() } ?: "-"
-                log("scan dev=$addr name=$name rssi=${result.rssi} conn=${result.isConnectable} services=$services solicit=$solicit")
-            }
-            if (gatt != null) return
-            val advertisesLdi =
-                rec?.serviceUuids?.any { it.uuid == LDI_SERVICE } == true ||
-                    rec?.serviceSolicitationUuids?.any { it.uuid == LDI_SERVICE } == true
-            if (addr == storedBikeAddress() || advertisesLdi) {
-                log("scan match $addr, connecting")
-                connectClient(dev, autoConnect = false)
-            }
+            fail("Advertising mislukt (code $errorCode)")
         }
-
-        override fun onScanFailed(errorCode: Int) {
-            scanning = false
-            log("scan failed code=$errorCode")
-        }
-    }
-
-    private fun tryDirectConnect(addr: String?) {
-        if (addr.isNullOrBlank() || gatt != null) return
-        val dev = runCatching { adapter?.getRemoteDevice(addr) }.getOrNull() ?: return
-        log("direct connect arm addr=$addr")
-        connectClient(dev, autoConnect = true)
     }
 
     // ------------------------------------------------------------ GATT server
@@ -229,10 +146,31 @@ class LdiConnection(private val context: Context) {
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             main.post {
                 log("server link ${device.address} state=$newState status=$status")
-                if (newState == BluetoothProfile.STATE_CONNECTED) connectClient(device, autoConnect = false)
-                else if (device.address == bikeDevice?.address && gatt == null) resumeSearch()
+                if (newState == BluetoothProfile.STATE_CONNECTED) onBikeLinked(device)
+                else if (device.address == bikeDevice?.address) onBikeLost()
             }
         }
+    }
+
+    private fun onBikeLinked(device: BluetoothDevice) {
+        if (!running) return
+        if (gatt != null && bikeDevice?.address == device.address) return
+        bikeDevice = device
+        stopAdvertising()
+        _status.value = Status.CONNECTING
+        _message.value = "Fiets verbonden, data ophalen..."
+        // Opens a GATT client on the link the bike just made.
+        gatt = device.connectGatt(context, false, clientCallback, BluetoothDevice.TRANSPORT_LE)
+    }
+
+    private fun onBikeLost() {
+        gatt?.close()
+        gatt = null
+        bikeDevice = null
+        if (!running) return
+        _status.value = Status.WAITING_FOR_BIKE
+        _message.value = "Verbinding weg. Wacht op fiets."
+        main.postDelayed({ startAdvertising() }, 500)
     }
 
     // ------------------------------------------------------------ GATT client
@@ -240,23 +178,11 @@ class LdiConnection(private val context: Context) {
     private var liveChar: BluetoothGattCharacteristic? = null
     private var subscribeRetries = 0
 
-    private fun connectClient(device: BluetoothDevice, autoConnect: Boolean) {
-        if (!running || gatt != null) return
-        bikeDevice = device
-        _status.value = Status.CONNECTING
-        _message.value = "Fiets gevonden, verbinden..."
-        log("open client ${device.address} auto=$autoConnect")
-        gatt = device.connectGatt(context, autoConnect, clientCallback, BluetoothDevice.TRANSPORT_LE)
-    }
-
     private val clientCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             main.post {
                 log("client state=$newState status=$status")
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    rememberBike(g.device?.address)
-                    stopAdvertising()
-                    stopScan()
                     // LDI quirk: the bike does not start an MTU exchange itself.
                     if (!g.requestMtu(247)) g.discoverServices()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
@@ -276,7 +202,7 @@ class LdiConnection(private val context: Context) {
             main.post {
                 val ch = g.getService(LDI_SERVICE)?.getCharacteristic(LDI_LIVE_DATA)
                 if (ch == null) {
-                    fail("LDI-service niet gevonden op dit apparaat.")
+                    fail("LDI-service niet gevonden. Fiets-firmware bijwerken via Flow (v19 of hoger).")
                     return@post
                 }
                 liveChar = ch
@@ -290,6 +216,7 @@ class LdiConnection(private val context: Context) {
             main.post {
                 log("cccd write status=$status")
                 if (status == BluetoothGatt.GATT_SUCCESS) {
+                    // A read returns a full snapshot, notifications only changes.
                     liveChar?.let { log("snapshot read issued=" + g.readCharacteristic(it)) }
                 } else if (isAuthError(status)) {
                     ensureBond()
@@ -299,6 +226,7 @@ class LdiConnection(private val context: Context) {
             }
         }
 
+        // API 33+
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
             handle(value)
         }
@@ -317,25 +245,6 @@ class LdiConnection(private val context: Context) {
         override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
             if (Build.VERSION.SDK_INT < 33 && status == BluetoothGatt.GATT_SUCCESS) c.value?.let { handle(it) }
         }
-    }
-
-    private fun onBikeLost() {
-        gatt?.close()
-        gatt = null
-        liveChar = null
-        bikeDevice = null
-        if (!running) return
-        resumeSearch()
-    }
-
-    private fun resumeSearch() {
-        if (!running || gatt != null) return
-        _status.value = Status.WAITING_FOR_BIKE
-        _message.value = "Verbinding weg. Fiets zoeken..."
-        seen.clear()
-        startAdvertising()
-        startScan()
-        main.postDelayed({ tryDirectConnect(storedBikeAddress()) }, 1000)
     }
 
     private fun subscribe(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
@@ -416,9 +325,6 @@ class LdiConnection(private val context: Context) {
 
     companion object {
         private const val TAG = "EbikeLdi"
-        // Bike's BLE address from an earlier successful session, used as the
-        // default direct-connect target until the app learns the real one.
-        private const val KNOWN_BIKE_ADDR = "00:04:63:A4:37:BB"
         val LDI_SERVICE: UUID = UUID.fromString("0000eb20-eaa2-11e9-81b4-2a2ae2dbcce4")
         val LDI_LIVE_DATA: UUID = UUID.fromString("0000eb21-eaa2-11e9-81b4-2a2ae2dbcce4")
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
