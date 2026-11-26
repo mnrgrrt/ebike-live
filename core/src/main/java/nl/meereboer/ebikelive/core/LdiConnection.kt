@@ -206,6 +206,7 @@ class LdiConnection(private val context: Context) {
                     return@post
                 }
                 liveChar = ch
+                log("eb21 found props=0x%02x".format(ch.properties))
                 subscribeRetries = 0
                 subscribe(g, ch)
             }
@@ -216,7 +217,7 @@ class LdiConnection(private val context: Context) {
                 log("cccd write status=$status")
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     // A read returns a full snapshot, notifications only changes.
-                    liveChar?.let { g.readCharacteristic(it) }
+                    liveChar?.let { log("snapshot read issued=" + g.readCharacteristic(it)) }
                 } else if (isAuthError(status)) {
                     ensureBond()
                 } else {
@@ -236,6 +237,7 @@ class LdiConnection(private val context: Context) {
         }
 
         override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+            log("snapshot read result status=$status size=${value.size}")
             if (status == BluetoothGatt.GATT_SUCCESS) handle(value)
         }
 
@@ -246,6 +248,7 @@ class LdiConnection(private val context: Context) {
     }
 
     private fun subscribe(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
+        log("subscribe: enabling notifications on eb21")
         g.setCharacteristicNotification(ch, true)
         val cccd = ch.getDescriptor(CCCD) ?: run {
             fail("Geen notificatie-descriptor op eb21")
@@ -263,7 +266,9 @@ class LdiConnection(private val context: Context) {
     }
 
     private fun handle(bytes: ByteArray) {
+        log("RX ${bytes.size}B hex=" + bytes.joinToString("") { "%02x".format(it) })
         val update = LiveDataDecoder.decode(bytes)
+        log("decoded=$update")
         main.post {
             _data.value = _data.value.merge(update)
             if (_status.value != Status.LIVE) {
